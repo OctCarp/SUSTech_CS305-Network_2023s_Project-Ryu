@@ -6,8 +6,15 @@ from ryu.lib.packet import udp
 from ryu.lib.packet import dhcp
 
 import struct
-from util import int_to_ip
-from util import ip_to_int
+
+
+def ip_to_int(ip_address):
+    ip = ip_address.split('.')
+    return (int(ip[0]) << 24) + (int(ip[1]) << 16) + (int(ip[2]) << 8) + int(ip[3])
+
+
+def int_to_ip(num):
+    return f"{num >> 24}.{(num >> 16) & 0xff}.{(num >> 8) & 0xff}.{num & 0xff}"
 
 
 class Config():
