@@ -231,3 +231,198 @@ Replying the Offer packet is only for the display and endding the test, but in f
 In the above display, because of the mapping between IP and MAC, no duplicate IP will be allocated.
 
 This is a brief demonstration of the DHCP function.
+
+
+
+## Shortest path switching
+
+### Code
+
+- function 'update_topo', update the topology structure each time wo do modification operations.
+
+```python
+def update_topo(self):
+    self.clear()
+    self.swids = [sw.dp.id for sw in get_all_switch(self)]
+
+    links_list = get_all_link(self)
+    for link in links_list:
+        self.adj[link.src.dpid][link.dst.dpid] = link.src.port_no
+        self.adj[link.dst.dpid][link.src.dpid] = link.dst.port_no
+
+    for cur_switch in self.swids:
+        for host_mac in self.host_port.keys():
+            host_swid = self.host_port[host_mac][0]
+            host_port_no = self.host_port[host_mac][1]
+            sw_port = self.shortest(cur_switch, host_swid, host_port_no)
+            if sw_port:
+                for sw_id, out_port in sw_port:
+                    dp = get_switch(self, sw_id)[0].dp
+                    match = dp.ofproto_parser.OFPMatch(dl_dst=host_mac)
+                    actions = [dp.ofproto_parser.OFPActionOutput(out_port)]
+                    mod = dp.ofproto_parser.OFPFlowMod(datapath=dp, match=match,
+                                                       priority=1, actions=actions)
+                    dp.send_msg(mod)
+
+            for src_mac in self.host_port.keys():
+                if self.host_port[src_mac][0] == cur_switch:
+                    src_port = self.host_port[src_mac]
+                    if sw_port and self.port_state[(src_port[0], src_port[1])]:
+                        self.print_path(sw_port=sw_port, src_mac=src_mac, dst_mac=host_mac)
+                    elif src_mac != host_mac:
+                        print(f"Net is break for {src_mac} to {host_mac}")
+```
+
+- function 'shortest', get shortest path according to the given src and dst, containing the switch id and the port it send packet out of each switch in the shortest path.
+
+```python
+def shortest(self, src_sw, dst_sw, dst_port):
+    if not self.port_state[(dst_sw, dst_port)]:
+        return None
+
+    if src_sw == dst_sw:
+        return [(dst_sw, dst_port)]
+
+    dis = {}
+    fa = {}
+
+    nodes = self.swids
+    for node in nodes:
+        dis[node] = float('inf')
+        fa[node] = None
+
+    que = Queue()
+    que.put(src_sw)
+    dis[src_sw] = 0
+    while not que.empty():
+        cur = que.get()
+        for sw in nodes:
+            if self.adj[cur][sw] is not None and dis[sw] > dis[cur] + 1:
+                dis[sw] = dis[cur] + 1
+                fa[sw] = cur
+                que.put(sw)
+
+    path_ids = []
+    if dst_sw not in fa.keys():
+        return None
+
+    father = fa[dst_sw]
+    cur = dst_sw
+    while True:
+        if cur == src_sw:
+            path_ids.append(src_sw)
+            break
+        elif father is None:
+            return None
+        else:
+            path_ids.append(cur)
+            father = fa[cur]
+            cur = father
+    path_ids.reverse()
+
+    sw_port = []
+    for step in range(0, len(path_ids) - 1):
+        out_port = self.adj[path_ids[step]][path_ids[step + 1]]
+        sw_port.append((path_ids[step], out_port))
+    sw_port.append((dst_sw, dst_port))
+    return sw_port
+```
+
+
+
+### Test
+
+#### basic test case
+
+##### 1.initial topology structure
+
+![topo_example](img_sp/topo_example.png)
+
+##### 2.the shortest path between any two hosts and length between any two switches
+
+![SP_basic_test](img_sp/SP_basic_test.png)
+
+##### 3.use `pingall` to verify connectivity between all hosts
+
+![SP_basic_test_2](img_sp/SP_basic_test_2.png)
+
+
+
+#### complex test case
+
+##### 1.initial topology structure
+
+![SP_complex_test_12](img_sp/SP_complex_test_12.png)
+
+##### 2.the shortest path between any two hosts and length between any two switches
+
+- Overall
+
+  ![SP_complex_test_1](img_sp/SP_complex_test_1.png)
+
+- Add Host（Initial）
+
+  ![SP_complex_test_2](img_sp/SP_complex_test_2.png)
+
+- Delete Switch
+
+  before delete switch s8：
+
+  ![SP_complex_test_3](img_sp/SP_complex_test_3.png)
+
+  after delete switch s8：
+
+  ![SP_complex_test_5](img_sp/SP_complex_test_5.png)
+
+- Add Switch
+
+  before add switch s1：
+
+  ![SP_complex_test_9](img_sp/SP_complex_test_9.png)
+
+  after add switch s1：
+
+  ![SP_complex_test_10](img_sp/SP_complex_test_10.png)
+
+- Delete Link
+
+  before delete link s3->s7：
+
+  ![SP_complex_test_3](img_sp/SP_complex_test_3.png)
+
+  after delete link s3->s7：
+
+  ![SP_complex_test_4](img_sp/SP_complex_test_4.png)
+
+- Add Link
+
+  before add link s5->s8：
+
+  ![SP_complex_test_7](img_sp/SP_complex_test_7.png)
+
+  after add link s5->s8：
+
+  ![SP_complex_test_8](img_sp/SP_complex_test_8.png)
+
+- Modify Port
+
+  before disable port 3 in switch 3（to switch 8）：
+
+  ![SP_complex_test_3](img_sp/SP_complex_test_3.png)
+
+  after disable port 3 in switch 3：
+
+  ![SP_complex_test_6](img_sp/SP_complex_test_6.png)
+
+  after enable port 3 in switch 3 again：
+
+  ![SP_complex_test_3](img_sp/SP_complex_test_3.png)
+
+##### 3.use `pingall` to verify connectivity between all hosts
+
+![SP_complex_test_11](img_sp/SP_complex_test_11.png)
+
+
+
+
+
