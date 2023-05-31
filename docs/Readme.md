@@ -424,5 +424,56 @@ def shortest(self, src_sw, dst_sw, dst_port):
 
 
 
+## Bouns 
+
+### Firewall
+
+### Code
+
+- We block packet to host which mac address is  `00:00:00:00:00:01` 
+
+```python
+from ryu.controller.handler import set_ev_cls
+from ryu.ofproto import ofproto_v1_0, ofproto_v1_0_parser
+from ryu.topology.api import *
 
 
+class Firewall(app_manager.RyuApp):
+    OFP_VERSIONS = [ofproto_v1_0.OFP_VERSION]
+
+    def __init__(self, *args, **kwargs):
+        super(Firewall, self).__init__(*args, **kwargs)
+        self.target = []
+        self.target.append('00:00:00:00:00:01')
+
+    @set_ev_cls(event.EventSwitchEnter)
+    def switch_features_handler(self, ev):
+        for drop_mac in self.target:
+            match = ofproto_v1_0_parser.OFPMatch(dl_dst=drop_mac)
+            command = ofproto_v1_0.OFPFC_ADD
+            drop = ofproto_v1_0.OFPP_NONE
+            actions = None
+            req = ofproto_v1_0_parser.OFPFlowMod(datapath=ev.switch.dp, command=command, idle_timeout=0, 												     hard_timeout=0,priority=600, match=match, actions=actions)
+            ev.switch.dp.send_msg(req)
+
+```
+
+### Test
+
+- Using ryu-manager --observe-links to run firewall.py and test_final.py .
+
+<img src="D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\firewall.png" style="zoom: 67%;" />
+
+- Run test_network.py which also use to check shortest path to build network topology.
+
+<img src="D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\test.png" style="zoom:67%;" />
+
+- h1'packet was blocked by firewall. Because h1's mac address is  `00:00:00:00:00:01` .
+
+![](D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\h1 ping h2.png)
+
+![](D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\h1 ping h3.png)
+
+- h2 and h3 can send packet to each other.
+
+![](D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\h2 ping h3.png)
