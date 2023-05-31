@@ -23,7 +23,6 @@ class ControllerAPP(app_manager.RyuApp):
         self.swids = []
         self.host_port = {}
         self.adj = defaultdict(lambda: defaultdict(lambda: None))
-        self.hosts = {}
         self.port_state = {}
 
     def clear(self):
@@ -82,7 +81,7 @@ class ControllerAPP(app_manager.RyuApp):
         dis = {}
         fa = {}
 
-        nodes = self.swid
+        nodes = self.swids
         for node in nodes:
             dis[node] = float('inf')
             fa[node] = None
