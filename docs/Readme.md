@@ -477,3 +477,186 @@ class Firewall(app_manager.RyuApp):
 - h2 and h3 can send packet to each other.
 
 ![h2 ping h3](img_firewall/h2 ping h3.png)
+
+
+
+#### DNS
+
+------
+
+Originally implemented an independent DNS server, but later found that it was necessary to implement DNS based on Ryu, but due to time constraints, it was not completed.
+
+Implementation idea: The implementation idea of this function is similar to that of a DHCP server. It is necessary to first use `getProtocol()` identify whether there is a DNS protocol packet in the application layer, and then reply the corresponding DNS data packet according to the protocol content.
+
+We can use tuples to store static DNS information in DNS Server for DNS response, such as `('www.google.com', '162.125.6.1', 'A')`, if we match the correct records in DNS, we can use a new packet to host to give response.
+
+This is our DNS code originally.
+
+```python
+from dnslib import *
+from dnslib.server import DNSServer, DNSHandler, BaseResolver
+
+
+class MyHandler(DNSHandler):
+
+    def __init__(self, request, client_address, server):
+        super().__init__(request, client_address, server)
+
+    def handle(self):
+        # 'handle DNS logic'
+        data = self.request[0]  # get request data
+
+        # resolve DNS requests
+        request = DNSRecord.parse(data)
+
+        qname = request.q.qname
+        qtype = request.q.qtype
+
+        # print DNS info
+        print(f"Received DNS query for {qname} ({QTYPE[qtype]}) from {self.client_address[0]}")
+
+        # manage DNS response
+        reply = request.reply()
+
+        # reply = request.reply()
+
+        if qtype == QTYPE.A:
+            # handle type A request
+            # insert DNS A query logic
+            reply.add_answer(RR(qname, qtype, rdata=A("127.0.0.1")))
+        elif qtype == QTYPE.AAAA:
+            # handle type AAAA request
+            # insert DNS AAAA query logic
+            reply.add_answer(RR(qname, qtype, rdata=AAAA("::1")))
+        elif qtype == QTYPE.NS:
+            # handle NS request
+            # insert NS query logic
+            reply.add_answer(RR(qname, qtype, rdata=A("ns.example.com")))
+            pass
+        elif qtype == QTYPE.CNAME:
+            # handle CNAME request
+            # insert CNAME query logic
+            reply.add_answer(RR(qname, qtype, rdata=A("cname.example.com")))
+            pass
+        elif qtype == QTYPE.MX:
+            # handle MX request
+            # handle MX query logic
+            reply.add_answer(RR(qname, qtype, rdata=A("mail.example.com")))
+            pass
+        else:
+            # for unsupported query types, return an error response
+            reply.header.rcode = RCODE.NXDOMAIN
+        # send DNS response to client
+        self.send_response(reply)
+
+    def send_response(self, reply):
+        # send DNS response to client
+        self.server.socket.sendto(reply.pack(), self.client_address)
+
+
+MyDNSserver = DNSServer(resolver=BaseResolver, handler=MyHandler, port=53, address="0.0.0.0")
+
+
+if __name__ == '__main__':
+
+    try:
+        print("Starting DNS server...")
+        print("Starting DNS server successfully.")
+        MyDNSserver.start()
+        while True:
+            pass
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print("Closing DNS server...")
+        MyDNSserver.stop()
+        print("Closing DNS server successfully.")
+```
+
+This is our new code. But we have not finish DNS controller part. In our new DNS Server version we try to complete DNS Server with Ryu. We get packet from DNS controller and handle packet data. Then generate reply packet and send to DNS controller. This DNS Server uses static response but we can also use dynamic response by creating a RRs list to save some RRs. Then if matched `qname`  and `qtype` we can send RR in RRs list back.
+
+```python
+from ryu.lib import addrconv
+from ryu.lib.packet import packet
+from ryu.lib.packet import ethernet
+from ryu.lib.packet import ipv4
+from dnslib import DNSRecord, RR, QTYPE, A, CNAME
+from dnslib import *
+from dnslib.server import DNSServer, DNSHandler, BaseResolver
+
+
+class DNS_Server():
+
+    def reply_packet(self, request):
+
+        r = request.reply()
+
+        if not request.querys:
+            print("ERROR: Blank request.")
+            return r
+
+        for query in request.querys:
+            name = query.get_qname
+            type = query.qtype
+            print(f"Received DNS query for {name} ({QTYPE[type]}) from {query.client_address[0]}")
+
+            if type == QTYPE.A:
+                # Handle A record query
+                # Add your A record query logic here
+                r.add_answer(RR(name, type, rdata=A("127.0.0.1")))
+            elif type == QTYPE.AAAA:
+                # Handle AAAA record query
+                # Add your AAAA record query logic here
+                r.add_answer(RR(name, type, rdata=AAAA("::1")))
+            elif type == QTYPE.NS:
+                # Handle NS record query
+                # Add your NS record query logic here
+                r.add_answer(RR(name, type, rdata=A("ns.example.com")))
+                pass
+            elif type == QTYPE.CNAME:
+                # Handle CNAME record lookups
+                # Add your CNAME record query logic here
+                r.add_answer(RR(name, type, rdata=A("cname.example.com")))
+                pass
+            elif type == QTYPE.MX:
+                # Handle MX record lookups
+                # Add your MX record query logic here
+                r.add_answer(RR(name, type, rdata=A("mail.example.com")))
+                pass
+            else:
+                # For unsupported query types, return the corresponding error response
+                r.header.rcode = RCODE.NXDOMAIN
+            # Send DNS response to client
+
+        return r
+
+    def dns_handler(self, datapath, pkt, port):
+        pkt_ethernet = pkt.get_protocol(ethernet.ethernet)
+        pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
+
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        request = DNSRecord.parse(pkt.protocols[-1])
+
+        if request.questions:
+            pkt_ethernet_resp = pkt_ethernet
+            pkt_ethernet_resp.src = pkt_ethernet_resp.dst
+            pkt_ethernet_resp.dst = pkt_ethernet_resp.src
+
+            pkt_ipv4_resp = pkt_ipv4
+            pkt_ipv4_resp.src = pkt_ipv4_resp.dst,
+            pkt_ipv4_resp.dst = pkt_ipv4_resp.src
+            pkt_ipv4_resp.total_length = 0
+
+            response = packet.Packet()
+            response.add_protocol(pkt_ethernet_resp)
+            response.add_protocol(pkt_ipv4_resp)
+            reply_payload = DNS_Server.reply_packet(request).pack()
+            response.add_protocol(reply_payload)
+            response.serialize()
+
+            return response
+
+```
+
