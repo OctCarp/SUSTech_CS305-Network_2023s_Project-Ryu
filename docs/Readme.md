@@ -1,4 +1,4 @@
-## SUSTech_CS305-Network_2023s_Project-SDN
+## SUSTech_CS305-Network_2023s_Project-Ryu
 
 #### Teammates：徐春晖，郭健阳，彭子燊
 
@@ -10,11 +10,11 @@
 
 ### Developers
 
-| Name       | SID          | Responsible for | Rate |
-| ---------- | ------------ | --------------- | ---- |
-| **徐春晖** | **12110304** | DHCP            |      |
-| **郭健阳** | **12111506** |                 |      |
-| **彭子燊** | **12110502** |                 |      |
+| Name       | SID          | Responsible for     | Rate |
+| ---------- | ------------ | ------------------- | ---- |
+| **徐春晖** | **12110304** | DHCP, Shortest path | 1/3  |
+| **郭健阳** | **12111506** | Firewall, DNS       | 1/3  |
+| **彭子燊** | **12110323** | Shortest path       | 1/3  |
 
 ### Project Instruction
 
@@ -462,18 +462,18 @@ class Firewall(app_manager.RyuApp):
 
 - Using ryu-manager --observe-links to run firewall.py and test_final.py .
 
-<img src="D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\firewall.png" style="zoom: 67%;" />
+![firewall](img_firewall/firewall.png)
 
 - Run test_network.py which also use to check shortest path to build network topology.
 
-<img src="D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\test.png" style="zoom:67%;" />
+![test](img_firewall/test.png)
 
 - h1'packet was blocked by firewall. Because h1's mac address is  `00:00:00:00:00:01` .
 
-![](D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\h1 ping h2.png)
+![h1 ping h2](img_firewall/h1 ping h2.png)
 
-![](D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\h1 ping h3.png)
+![h1 ping h3](img_firewall/h1 ping h3.png)
 
 - h2 and h3 can send packet to each other.
 
-![](D:\Github\SUSTech_CS305-Network_2023s_Project-SDN\docs\img_firewall\h2 ping h3.png)
+![h2 ping h3](img_firewall/h2 ping h3.png)
