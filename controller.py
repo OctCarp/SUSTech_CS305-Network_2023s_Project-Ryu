@@ -30,30 +30,30 @@ class ControllerAPP(app_manager.RyuApp):
         self.adj = defaultdict(lambda: defaultdict(lambda: None))
 
     def update_topo(self):
-        self.clear()
-        self.swids = [sw.dp.id for sw in get_all_switch(self)]
+        self.clear()  # init table
+        self.swids = [sw.dp.id for sw in get_all_switch(self)]  # get all dpid
 
         links_list = get_all_link(self)
-        for link in links_list:
+        for link in links_list:  # get all link
             self.adj[link.src.dpid][link.dst.dpid] = link.src.port_no
             self.adj[link.dst.dpid][link.src.dpid] = link.dst.port_no
 
-        for cur_switch in self.swids:
-            for host_mac in self.host_port.keys():
+        for cur_switch in self.swids:  # for each switch
+            for host_mac in self.host_port.keys():  # then for each host mac
                 host_swid = self.host_port[host_mac][0]
                 host_port_no = self.host_port[host_mac][1]
-                sw_port = self.shortest(cur_switch, host_swid, host_port_no)
-                if sw_port:
+                sw_port = self.shortest(cur_switch, host_swid, host_port_no)  # find sp
+                if sw_port:  # has path
                     for sw_id, out_port in sw_port:
                         dp = get_switch(self, sw_id)[0].dp
                         match = dp.ofproto_parser.OFPMatch(dl_dst=host_mac)
                         actions = [dp.ofproto_parser.OFPActionOutput(out_port)]
                         mod = dp.ofproto_parser.OFPFlowMod(datapath=dp, match=match,
                                                            priority=1, actions=actions)
-                        dp.send_msg(mod)
+                        dp.send_msg(mod)  # send flow table
 
                 for src_mac in self.host_port.keys():
-                    if self.host_port[src_mac][0] == cur_switch:
+                    if self.host_port[src_mac][0] == cur_switch:  # src host
                         src_port = self.host_port[src_mac]
                         if sw_port and self.port_state[(src_port[0], src_port[1])]:
                             self.print_path(sw_port=sw_port, src_mac=src_mac, dst_mac=host_mac)
@@ -73,24 +73,24 @@ class ControllerAPP(app_manager.RyuApp):
 
     def shortest(self, src_sw, dst_sw, dst_port):
         if not self.port_state[(dst_sw, dst_port)]:
-            return None
+            return None  # host port shut down, None
 
-        if src_sw == dst_sw:
+        if src_sw == dst_sw:  # dst switch to host
             return [(dst_sw, dst_port)]
 
-        dis = {}
-        fa = {}
+        dis = {}  # distance
+        fa = {}  # father node
 
         nodes = self.swids
         for node in nodes:
-            dis[node] = float('inf')
+            dis[node] = float('inf')  # init
             fa[node] = None
 
         que = Queue()
         que.put(src_sw)
         dis[src_sw] = 0
         while not que.empty():
-            cur = que.get()
+            cur = que.get()  # BFS
             for sw in nodes:
                 if self.adj[cur][sw] is not None and dis[sw] > dis[cur] + 1:
                     dis[sw] = dis[cur] + 1
@@ -99,11 +99,11 @@ class ControllerAPP(app_manager.RyuApp):
 
         path_ids = []
         if dst_sw not in fa.keys():
-            return None
+            return None  # can not reach host
 
         father = fa[dst_sw]
         cur = dst_sw
-        while True:
+        while True:  # find the father node
             if cur == src_sw:
                 path_ids.append(src_sw)
                 break
@@ -113,7 +113,7 @@ class ControllerAPP(app_manager.RyuApp):
                 path_ids.append(cur)
                 father = fa[cur]
                 cur = father
-        path_ids.reverse()
+        path_ids.reverse()  # we get the switch ID in this path
 
         sw_port = []
         for step in range(0, len(path_ids) - 1):

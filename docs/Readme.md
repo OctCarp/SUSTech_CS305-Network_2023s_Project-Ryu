@@ -2,9 +2,9 @@
 
 #### Teammates：徐春晖，郭健阳，彭子燊
 
-> The source code is hosted on GitHub and will be open-sourced based on the **MIT License** after the project deadline. The access link is:
+> The source code is hosted on GitHub and will be open-sourced based on **MIT License** after the project deadline. The access link is:
 >
-> https://github.com/OctCarp/SUSTech_CS305-Network_2023s_Project-SDN
+> https://github.com/OctCarp/SUSTech_CS305-Network_2023s_Project-Ryu
 
 ------
 
@@ -232,40 +232,42 @@ In the above display, because of the mapping between IP and MAC, no duplicate IP
 
 This is a brief demonstration of the DHCP function.
 
+#### No Duplicate IP Allocation
 
+By using the IP-MAC dic pool, we can guarantee each IP will only have one corresponding MAC, and there will be no duplication
 
 ## Shortest path switching
 
 ### Code
 
-- function 'update_topo', update the topology structure each time wo do modification operations.
+- function `update_topo`, update the topology structure each time wo do modification operations.
 
 ```python
 def update_topo(self):
-    self.clear()
-    self.swids = [sw.dp.id for sw in get_all_switch(self)]
+    self.clear()  # init table
+    self.swids = [sw.dp.id for sw in get_all_switch(self)]  #get all dpid
 
     links_list = get_all_link(self)
-    for link in links_list:
+    for link in links_list:  #get all link
         self.adj[link.src.dpid][link.dst.dpid] = link.src.port_no
         self.adj[link.dst.dpid][link.src.dpid] = link.dst.port_no
 
-    for cur_switch in self.swids:
-        for host_mac in self.host_port.keys():
+    for cur_switch in self.swids:  # for each switch
+        for host_mac in self.host_port.keys():  # then for each host mac
             host_swid = self.host_port[host_mac][0]
             host_port_no = self.host_port[host_mac][1]
-            sw_port = self.shortest(cur_switch, host_swid, host_port_no)
-            if sw_port:
+            sw_port = self.shortest(cur_switch, host_swid, host_port_no)  # find sp
+            if sw_port:  # has path
                 for sw_id, out_port in sw_port:
                     dp = get_switch(self, sw_id)[0].dp
                     match = dp.ofproto_parser.OFPMatch(dl_dst=host_mac)
                     actions = [dp.ofproto_parser.OFPActionOutput(out_port)]
                     mod = dp.ofproto_parser.OFPFlowMod(datapath=dp, match=match,
                                                        priority=1, actions=actions)
-                    dp.send_msg(mod)
+                    dp.send_msg(mod)  # send flow table
 
             for src_mac in self.host_port.keys():
-                if self.host_port[src_mac][0] == cur_switch:
+                if self.host_port[src_mac][0] == cur_switch:  # src host
                     src_port = self.host_port[src_mac]
                     if sw_port and self.port_state[(src_port[0], src_port[1])]:
                         self.print_path(sw_port=sw_port, src_mac=src_mac, dst_mac=host_mac)
@@ -273,29 +275,29 @@ def update_topo(self):
                         print(f"Net is break for {src_mac} to {host_mac}")
 ```
 
-- function 'shortest', get shortest path according to the given src and dst, containing the switch id and the port it send packet out of each switch in the shortest path.
+- function `shortest`, get shortest path according to the given src and dst, containing the `switch id` and the `port` it send packet out of each switch in the shortest path. We use simple BFS, and get each switch and its output port.
 
 ```python
 def shortest(self, src_sw, dst_sw, dst_port):
     if not self.port_state[(dst_sw, dst_port)]:
-        return None
+        return None  # host port shut down, None
 
-    if src_sw == dst_sw:
+    if src_sw == dst_sw: # dst switch to host
         return [(dst_sw, dst_port)]
 
-    dis = {}
-    fa = {}
+    dis = {}  # distance
+    fa = {}  # father node
 
     nodes = self.swids
     for node in nodes:
-        dis[node] = float('inf')
+        dis[node] = float('inf')  # init
         fa[node] = None
 
     que = Queue()
     que.put(src_sw)
     dis[src_sw] = 0
     while not que.empty():
-        cur = que.get()
+        cur = que.get()  # BFS
         for sw in nodes:
             if self.adj[cur][sw] is not None and dis[sw] > dis[cur] + 1:
                 dis[sw] = dis[cur] + 1
@@ -304,11 +306,11 @@ def shortest(self, src_sw, dst_sw, dst_port):
 
     path_ids = []
     if dst_sw not in fa.keys():
-        return None
+        return None  # can not reach host
 
     father = fa[dst_sw]
     cur = dst_sw
-    while True:
+    while True:  # find the father node
         if cur == src_sw:
             path_ids.append(src_sw)
             break
@@ -318,14 +320,7 @@ def shortest(self, src_sw, dst_sw, dst_port):
             path_ids.append(cur)
             father = fa[cur]
             cur = father
-    path_ids.reverse()
-
-    sw_port = []
-    for step in range(0, len(path_ids) - 1):
-        out_port = self.adj[path_ids[step]][path_ids[step + 1]]
-        sw_port.append((path_ids[step], out_port))
-    sw_port.append((dst_sw, dst_port))
-    return sw_port
+    path_ids.reverse()  # we get the switch ID in this path
 ```
 
 
@@ -349,6 +344,8 @@ def shortest(self, src_sw, dst_sw, dst_port):
 
 
 #### complex test case
+
+You can check [switching_test/test_network.py](../tests/switching_test/test_network.py) `class ComplexTopo` for original information.
 
 ##### 1.initial topology structure
 
@@ -461,11 +458,11 @@ class Firewall(app_manager.RyuApp):
 
 ### Test
 
-- Using ryu-manager --observe-links to run firewall.py and test_final.py .
+- Using `ryu-manager --observe-links` to run `firewall.py` and `test_final.py` .
 
-<img src="img_firewall/firewall.png" alt="firewall" style="zoom:80%;" />
+![firewall](img_firewall/firewall.png)
 
-- Run test_network.py which also use to check shortest path to build network topology.
+- Run `test_network.py` which also use to check shortest path to build network topology.
 
 ![test](img_firewall/test.png)
 
@@ -578,11 +575,7 @@ class FirewallApp(app_manager. RyuApp):
          return False
 ```
 
-
-
 #### DNS
-
-------
 
 Originally implemented an independent DNS server, but later found that it was necessary to implement DNS based on Ryu, but due to time constraints, it was not completed.
 
@@ -673,7 +666,7 @@ if __name__ == '__main__':
         print("Closing DNS server successfully.")
 ```
 
-This is our new code. But we have not finish DNS controller part. In our new DNS Server version we try to complete DNS Server with Ryu. We get packet from DNS controller and handle packet data. Then generate reply packet and send to DNS controller. This DNS Server uses static response but we can also use dynamic response by creating a RRs list to save some RRs. Then if matched `qname`  and `qtype` we can send RR in RRs list back.
+This is our new code. But we have not finish DNS controller part. In our new DNS Server version we try to complete DNS Server with Ryu. We get packet from DNS controller and handle packet data. Then generate reply packet and send to DNS controller. This DNS Server uses static response but we can also use dynamic response by creating a RRs list to save some RRs. Then if matched `qname`  and `qtype` we can send `RR` in `RRs` list back.
 
 ```python
 from ryu.lib import addrconv
@@ -731,32 +724,28 @@ class DNS_Server():
         return r
 
     def dns_handler(self, datapath, pkt, port):
-        pkt_ethernet = pkt.get_protocol(ethernet.ethernet)
-        pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
-
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
+        ether_c = pkt.get_protocol(ethernet.ethernet)
+        ip_c = pkt.get_protocol(ipv4.ipv4)
 
         request = DNSRecord.parse(pkt.protocols[-1])
 
         if request.questions:
-            pkt_ethernet_resp = pkt_ethernet
-            pkt_ethernet_resp.src = pkt_ethernet_resp.dst
-            pkt_ethernet_resp.dst = pkt_ethernet_resp.src
+            pkt_ethernet = ether_c
+            pkt_ethernet.src = pkt_ethernet.dst
+            pkt_ethernet.dst = pkt_ethernet.src
 
-            pkt_ipv4_resp = pkt_ipv4
-            pkt_ipv4_resp.src = pkt_ipv4_resp.dst,
-            pkt_ipv4_resp.dst = pkt_ipv4_resp.src
-            pkt_ipv4_resp.total_length = 0
+            pkt_ip = ip_c
+            pkt_ip.src = pkt_ip.dst,
+            pkt_ip.dst = pkt_ip.src
 
             response = packet.Packet()
-            response.add_protocol(pkt_ethernet_resp)
-            response.add_protocol(pkt_ipv4_resp)
-            reply_payload = DNS_Server.reply_packet(request).pack()
-            response.add_protocol(reply_payload)
-            response.serialize()
+            response.add_protocol(pkt_ethernet)
+            response.add_protocol(pkt_ip)
+            response.add_protocol(self.reply_packet(request))
 
             return response
-
 ```
 
+------
+
+### That's the end of our project report, thanks for reading!
