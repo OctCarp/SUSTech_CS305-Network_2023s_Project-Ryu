@@ -424,13 +424,14 @@ def shortest(self, src_sw, dst_sw, dst_port):
 
 
 
-## Bouns 
+## Bonus 
 
 ### Firewall
 
 ### Code
 
 - We block packet to host which mac address is  `00:00:00:00:00:01` 
+- This is our new firewall code.
 
 ```python
 from ryu.controller.handler import set_ev_cls
@@ -462,7 +463,7 @@ class Firewall(app_manager.RyuApp):
 
 - Using ryu-manager --observe-links to run firewall.py and test_final.py .
 
-![firewall](img_firewall/firewall.png)
+<img src="img_firewall/firewall.png" alt="firewall" style="zoom:80%;" />
 
 - Run test_network.py which also use to check shortest path to build network topology.
 
@@ -477,6 +478,105 @@ class Firewall(app_manager.RyuApp):
 - h2 and h3 can send packet to each other.
 
 ![h2 ping h3](img_firewall/h2 ping h3.png)
+
+
+
+- This our original firewall code. But we find `EventOFPSwitchFeatures` in `@set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)` and `EventOFPPacketIn`  in  ` @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)` are not exist. So we rewrite our firewall code.
+
+```python
+from ryu.base import app_manager
+from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, set_ev_cls
+from ryu.controller import ofp_event
+from ryu.ofproto import ofproto_v1_3
+from ryu.lib.packet import packet
+from ryu.lib.packet import ethernet
+
+
+class FirewallApp(app_manager. RyuApp):
+     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+
+     def __init__(self, *args, **kwargs):
+         super(FirewallApp, self).__init__(*args, **kwargs)
+         self.mac_to_port = {}
+
+     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
+     def switch_features_handler(self, ev):
+         datapath = ev.msg.datapath
+         ofproto = datapath.ofproto
+         parser = datapath.ofproto_parser
+
+         # Add default flow table rules to forward all packets to the controller for processing
+         match = parser.OFPMatch()
+         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+                                           ofproto.OFPCML_NO_BUFFER)]
+         self. add_flow(datapath, 0, match, actions)
+
+     def add_flow(self, datapath, priority, match, actions):
+         ofproto = datapath.ofproto
+         parser = datapath.ofproto_parser
+
+         # Create flow table rules
+         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                              actions)]
+         mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+                                 match=match, instructions=inst)
+         datapath. send_msg(mod)
+
+     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
+     def packet_in_handler(self, ev):
+         # Parse the received packet
+         msg = ev.msg
+         datapath = msg.datapath
+         ofproto = datapath.ofproto
+         parser = datapath.ofproto_parser
+         in_port = msg.match['in_port']
+
+         pkt = packet.Packet(msg.data)
+         eth_pkt = pkt.get_protocol(ethernet.ethernet)
+
+         # ignore non-Ethernet packets
+         if not eth_pkt:
+             return
+
+         # Get the source MAC address and destination MAC address
+         src_mac = eth_pkt.src
+         dst_mac = eth_pkt.dst
+
+         # Record the mapping relationship between source MAC address and port in the mac_to_port dictionary
+         if datapath.id not in self.mac_to_port:
+             self.mac_to_port[datapath.id] = {}
+         self.mac_to_port[datapath.id][src_mac] = in_port
+
+         # Check firewall rules and decide whether to block packets
+         if self.firewall_check(src_mac, dst_mac):
+             # block packets
+             return
+
+         # Find the port based on the destination MAC address and send the packet
+         if dst_mac in self.mac_to_port[datapath.id]:
+             out_port = self.mac_to_port[datapath.id][dst_mac]
+         else:
+             # If the destination MAC address is unknown, send packets to all ports (broadcast)
+             out_port = ofproto.OFPP_FLOOD
+
+         # Create a flow table rule to forward the packet to the corresponding port
+         actions = [parser. OFPActionOutput(out_port)]
+         data = None
+         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+             data = msg.data
+         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                   in_port=in_port, actions=actions, data=data)
+         datapath. send_msg(out)
+
+     def firewall_check(self, src_mac, dst_mac):
+        
+
+         # Example rule: Block packets with source MAC address 00:00:00:00:00:01
+         if src_mac == '00:00:00:00:00:01':
+             return True
+
+         return False
+```
 
 
 
